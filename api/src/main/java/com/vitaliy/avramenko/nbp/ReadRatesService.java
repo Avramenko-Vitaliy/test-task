@@ -1,10 +1,10 @@
 package com.vitaliy.avramenko.nbp;
 
+import com.vitaliy.avramenko.dto.RateDto;
 import com.vitaliy.avramenko.entity.Rate;
 import com.vitaliy.avramenko.nbp.dto.ExchangeRatesTable;
 import com.vitaliy.avramenko.repository.RatesRepository;
-import com.vitaliy.avramenko.service.ConverterService;
-import org.apache.commons.lang3.time.DateUtils;
+import com.vitaliy.avramenko.utils.ConverterUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -12,11 +12,10 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
-import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
-import javax.annotation.PostConstruct;
 import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -30,20 +29,16 @@ public class ReadRatesService {
     @Value("${exchange.rates.endpoint}")
     private String ratesEndpoint;
 
-    @Autowired
-    private RatesRepository ratesRepository;
+    private final RatesRepository ratesRepository;
 
     private RestTemplate restTemplate = new RestTemplate();
 
-    @PostConstruct
-    private void init() {
-        if (ratesRepository.findAll().isEmpty()) {
-            List<Rate> rates = requestRates(DateUtils.addDays(new Date(), -93), DateUtils.addDays(new Date(), -1));
-            ratesRepository.save(rates);
-        }
+    public ReadRatesService(@Autowired RatesRepository ratesRepository) {
+        this.ratesRepository = ratesRepository;
     }
 
-    private List<Rate> requestRates(Date startDate, Date endDate) {
+    public List<RateDto> requestRates(Date startDate, Date endDate) {
+        LOG.info(String.format("[Request to NBP API] date range: %s and %s", dateFormat.format(startDate), dateFormat.format(endDate)));
         Map<String, String> params = new HashMap<>();
         params.put("startDate", dateFormat.format(startDate));
         params.put("endDate", dateFormat.format(endDate));
@@ -55,28 +50,35 @@ public class ReadRatesService {
                 new ParameterizedTypeReference<ArrayList<ExchangeRatesTable>>(){},
                 params
         );
-        return response.getBody().stream()
-                .flatMap(item -> ConverterService.converRateFromThirdPartyToEntity(item).stream())
+        List<Rate> rates = ConverterUtils.convertRateFromThirdPartyToEntity(response.getBody());
+        saveRates(rates);
+        return rates.stream()
+                .parallel()
+                .map(ConverterUtils::convertRateEntityToDto)
+                .sorted((o1, o2) -> o2.getDateRate().compareTo(o1.getDateRate()))
                 .collect(Collectors.toList());
     }
 
-    @Scheduled(fixedDelay = DateUtils.MILLIS_PER_HOUR)
-    private void readRates() {
-        List<Rate> rates = requestRates(DateUtils.addDays(new Date(), -1), DateUtils.addDays(new Date(), -1));
-        List<Rate> batch = new ArrayList<>();
-        rates.parallelStream().forEach(item -> {
-            Rate rate = ratesRepository.findByCodeAndDateRate(item.getCode(), item.getDateRate());
-            if (null != rate) {
-                if (rate.getRate().compareTo(item.getRate()) != 0) {
-                    rate.setRate(item.getRate());
-                    batch.add(rate);
-                    LOG.info(String.format("Rate of currency %s on date %s will update", rate.getCode(), rate.getDateRate()));
-                }
-            } else {
-                batch.add(item);
-                LOG.info(String.format("Rate of currency %s on date %s will add", item.getCode(), item.getDateRate()));
-            }
-        });
+    @Async
+    private void saveRates(List<Rate> rateList) {
+        List<Rate> batch = rateList.stream()
+                .parallel()
+                .reduce(new ArrayList<>(), this::collectRates, ConverterUtils::concatTwoArray);
         ratesRepository.save(batch);
+    }
+
+    private List<Rate> collectRates(List<Rate> rates, Rate rate) {
+        Rate entity = ratesRepository.findByDateRate(rate.getDateRate());
+        if (Objects.nonNull(entity)) {
+            if (entity.getRate().compareTo(rate.getRate()) != 0) {
+                entity.setRate(rate.getRate());
+                rates.add(entity);
+                LOG.info(String.format("Rate on date %s will update", rate.getDateRate()));
+            }
+        } else {
+            rates.add(rate);
+            LOG.info(String.format("Rate on date %s will add", rate.getDateRate()));
+        }
+        return rates;
     }
 }

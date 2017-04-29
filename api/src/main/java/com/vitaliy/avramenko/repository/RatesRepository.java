@@ -8,7 +8,7 @@ import java.util.List;
 
 public interface RatesRepository extends JpaRepository<Rate, Long> {
 
-    Rate findByCodeAndDateRate(String code, Date date);
+    Rate findByDateRate(Date date);
 
-    List<Rate> findByCodeAndDateRateBetweenOrderByDateRateDesc(String code, Date start, Date end);
+    List<Rate> findByDateRateBetweenOrderByDateRateDesc(Date start, Date end);
 }

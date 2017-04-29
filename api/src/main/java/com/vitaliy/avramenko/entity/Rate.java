@@ -8,13 +8,11 @@ import java.util.Date;
 
 @Data
 @Entity
-@Table(name = "rateNbps")
+@Table(name = "rates")
 public class Rate {
     @Id
     @GeneratedValue(strategy=GenerationType.AUTO)
     private Long rateId;
-    private String currency;
-    private String code;
     private BigDecimal rate;
     private Date dateRate;
 }

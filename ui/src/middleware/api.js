@@ -10,8 +10,8 @@ const instance = axios.create({
     withCredentials: true,
 });
 
-export const callApi = (method = 'get', endpoint, body) =>
-    instance({ url: endpoint, method, data: body });
+export const callApi = (responseType, method, endpoint, body) =>
+    instance({ url: endpoint, method, data: body, responseType });
 
 export const CALL_API = Symbol('CALL_API');
 
@@ -23,7 +23,7 @@ export default store => next => (action) => {
     }
 
     let { endpoint } = callAPI;
-    const { type, method = 'get', body = {} } = callAPI;
+    const { responseType = 'json', type, method = 'get', body = {}, formatter = response => response } = callAPI;
 
     if (typeof endpoint === 'function') {
         endpoint = endpoint(store.getState());
@@ -36,7 +36,6 @@ export default store => next => (action) => {
     if (typeof type !== 'string') {
         throw new Error('Expected action type to be string.');
     }
-    console.log('endpoint, type, method', endpoint, type, method);
 
     const actionWith = (data) => {
         const finalAction = {
@@ -54,12 +53,11 @@ export default store => next => (action) => {
             type: startAction(type),
         }),
     );
-    return callApi(method, endpoint, body).then(
+    return callApi(responseType, method, endpoint, body).then(
         (response) => {
-            console.log('api success', response);
             return store.dispatch(
                 actionWith({
-                    response,
+                    response: formatter(response),
                     type: successAction(type),
                 }),
             );
