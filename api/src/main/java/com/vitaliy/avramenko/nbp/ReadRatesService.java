@@ -1,6 +1,5 @@
 package com.vitaliy.avramenko.nbp;
 
-import com.vitaliy.avramenko.dto.RateDto;
 import com.vitaliy.avramenko.entity.Rate;
 import com.vitaliy.avramenko.nbp.dto.ExchangeRatesTable;
 import com.vitaliy.avramenko.repository.RatesRepository;
@@ -18,7 +17,6 @@ import org.springframework.web.client.RestTemplate;
 
 import java.text.SimpleDateFormat;
 import java.util.*;
-import java.util.stream.Collectors;
 
 @Service
 public class ReadRatesService {
@@ -37,7 +35,7 @@ public class ReadRatesService {
         this.ratesRepository = ratesRepository;
     }
 
-    public List<RateDto> requestRates(Date startDate, Date endDate) {
+    public List<Rate> requestRates(Date startDate, Date endDate) {
         LOG.info(String.format("[Request to NBP API] date range: %s and %s", dateFormat.format(startDate), dateFormat.format(endDate)));
         Map<String, String> params = new HashMap<>();
         params.put("startDate", dateFormat.format(startDate));
@@ -50,17 +48,11 @@ public class ReadRatesService {
                 new ParameterizedTypeReference<ArrayList<ExchangeRatesTable>>(){},
                 params
         );
-        List<Rate> rates = ConverterUtils.convertRateFromThirdPartyToEntity(response.getBody());
-        saveRates(rates);
-        return rates.stream()
-                .parallel()
-                .map(ConverterUtils::convertRateEntityToDto)
-                .sorted((o1, o2) -> o2.getDateRate().compareTo(o1.getDateRate()))
-                .collect(Collectors.toList());
+        return ConverterUtils.convertRateFromThirdPartyToEntity(response.getBody());
     }
 
     @Async
-    private void saveRates(List<Rate> rateList) {
+    public void saveRates(List<Rate> rateList) {
         List<Rate> batch = rateList.stream()
                 .parallel()
                 .reduce(new ArrayList<>(), this::collectRates, ConverterUtils::concatTwoArray);

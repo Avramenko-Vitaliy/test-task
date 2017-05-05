@@ -1,6 +1,7 @@
 package com.vitaliy.avramenko.service;
 
 import com.vitaliy.avramenko.dto.RateDto;
+import com.vitaliy.avramenko.entity.Rate;
 import com.vitaliy.avramenko.nbp.ReadRatesService;
 import com.vitaliy.avramenko.nbp.dto.RequestParams;
 import com.vitaliy.avramenko.repository.RatesRepository;
@@ -29,10 +30,16 @@ public class RatesService {
             return getRates();
         }
         long startTime = System.currentTimeMillis();
-        List<RateDto> rates = nbpService.requestRates(params.getStartDate(), params.getEndDate());
+        List<Rate> rates = nbpService.requestRates(params.getStartDate(), params.getEndDate());
+        nbpService.saveRates(rates);
+        List<RateDto> result = rates.stream()
+                .parallel()
+                .map(ConverterUtils::convertRateEntityToDto)
+                .sorted((o1, o2) -> o2.getDateRate().compareTo(o1.getDateRate()))
+                .collect(Collectors.toList());
         long endTime = System.currentTimeMillis();
-        LOG.info(String.format("Time take to process the API response are %s seconds", endTime - startTime));
-        return rates;
+        LOG.info(String.format("Time take to process the API response are %s milliseconds", endTime - startTime));
+        return result;
     }
 
     public List<RateDto> getRates() {
